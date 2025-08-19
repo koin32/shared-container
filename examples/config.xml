@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<containers>
+    <container id="0x1001" size="1M"/>
+    <container id="0x1002" size="64K"/>
+    <container id="42" size="4K"/>
+</containers>

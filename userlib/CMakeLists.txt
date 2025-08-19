@@ -15,4 +15,7 @@ target_include_directories(kcontainer PUBLIC
 )
 
 find_package(TinyXML2 REQUIRED)
+if(NOT TinyXML2_FOUND)
+    message(FATAL_ERROR "TinyXML2 not found. Please install libtinyxml2-dev or set TinyXML2_DIR or CMAKE_PREFIX_PATH.")
+endif()
 target_link_libraries(kcontainer PUBLIC TinyXML2::TinyXML2)
