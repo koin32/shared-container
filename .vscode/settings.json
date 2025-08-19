@@ -61,6 +61,7 @@
     "string_view": "cpp",
     "initializer_list": "cpp",
     "stdexcept": "cpp",
-    "random": "c"
+    "random": "c",
+    "sstream": "cpp"
   }
 }

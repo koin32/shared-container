@@ -1,16 +1,20 @@
 #include "xml_config.hpp"
 #include "kcontainer.hpp"
+
+#ifdef HAVE_TINYXML2
 #include <tinyxml2.h>
+using namespace tinyxml2;
+#endif
+
 #include <stdexcept>
 #include <system_error>
 #include <sstream>
 #include <cctype>
-
-using namespace tinyxml2;
+#include <fstream>
+#include <regex>
 
 namespace {
 
-// "100K", "64M", "1G" → bytes
 size_t parse_size(const std::string& s) {
     size_t num = 0;
     char suffix = 0;
@@ -46,6 +50,7 @@ uint64_t parse_id(const std::string& s) {
 namespace kcontainer {
 
 std::vector<ContainerSpec> parse_xml(const std::string& xml_path) {
+#ifdef HAVE_TINYXML2
     XMLDocument doc;
     if (doc.LoadFile(xml_path.c_str()) != XML_SUCCESS)
         throw std::runtime_error("cannot load XML: " + xml_path);
@@ -65,9 +70,13 @@ std::vector<ContainerSpec> parse_xml(const std::string& xml_path) {
         out.push_back(spec);
     }
     return out;
+#else
+    throw std::runtime_error("XML support not available (TinyXML2 not found)");
+#endif
 }
 
 int ensure_from_xml(const std::string& xml_path) {
+#ifdef HAVE_TINYXML2
     auto specs = parse_xml(xml_path);
     int ok = 0;
     for (auto& s : specs) {
@@ -75,10 +84,13 @@ int ensure_from_xml(const std::string& xml_path) {
             Container::create(s.id, s.size);
             ++ok;
         } catch(...) {
-            // уже создан или ошибка
+            // already exists or error
         }
     }
     return ok;
+#else
+    throw std::runtime_error("XML support not available (TinyXML2 not found)");
+#endif
 }
 
 } // namespace kcontainer
