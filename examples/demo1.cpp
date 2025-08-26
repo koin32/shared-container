@@ -40,13 +40,14 @@ int main() {
         kcontainer::Container reopened = kcontainer::Container::open(123);
         std::cout << "✅ Контейнер переоткрыт, размер: " << reopened.size() << " байт\n";
         
-        // 7. Получаем информацию о контейнере
+        // 7. Получаем информацию о контейнере (ИСПРАВЛЕНО: 3 параметра)
         size_t size;
-        uint32_t refcnt;
-        if (reopened.info(size, refcnt)) {
+        uint32_t user_refs, kernel_refs;
+        if (reopened.info(size, user_refs, kernel_refs)) {
             std::cout << "📊 Информация о контейнере:\n";
             std::cout << "   - Размер: " << size << " байт\n";
-            std::cout << "   - Количество ссылок: " << refcnt << "\n";
+            std::cout << "   - Пользовательских процессов: " << user_refs << "\n";
+            std::cout << "   - Ядерных ссылок: " << kernel_refs << "\n";
         }
         
         reopened.close();

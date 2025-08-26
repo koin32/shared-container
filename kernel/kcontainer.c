@@ -10,6 +10,8 @@
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/anon_inodes.h>
+#include <linux/refcount.h>
+#include <linux/rcupdate.h>
 
 #include "kcontainer_uapi.h"
 
@@ -17,18 +19,18 @@ MODULE_DESCRIPTION("Kernel shared container with shmem-backed mmap by ID");
 MODULE_AUTHOR("you");
 MODULE_LICENSE("GPL");
 
-// Define kcont structure first
 struct kcont {
     u64 id;
     u64 size;
-    struct file *shmem_file; /* shmem file, shared */
-    refcount_t refs; /* logical references to the container */
+    struct file *shmem_file;
+    refcount_t refs;
+    refcount_t user_refs;
     struct hlist_node node;
+    struct rcu_head rcu;
 };
 
-// Define hash table and mutex after struct kcont
 #define KCONT_HASH_BITS 10
-static DEFINE_HASHTABLE(g_table, KCONT_HASH_BITS); /* 1024 buckets */
+static DEFINE_HASHTABLE(g_table, KCONT_HASH_BITS);
 static DEFINE_MUTEX(g_lock);
 
 static struct kcont *kcont_lookup(u64 id)
@@ -45,7 +47,6 @@ static struct kcont *kcont_create(u64 id, u64 size)
 {
     struct kcont *c;
     struct file *filp;
-    /* Size will be page-aligned inside shmem */
     if (size == 0)
         return ERR_PTR(-EINVAL);
 
@@ -62,9 +63,22 @@ static struct kcont *kcont_create(u64 id, u64 size)
     c->size = size;
     c->shmem_file = filp;
     refcount_set(&c->refs, 1);
+    refcount_set(&c->user_refs, 0);
 
     hash_add(g_table, &c->node, c->id);
     return c;
+}
+
+static void kcont_get_user(struct kcont *c)
+{
+    refcount_inc(&c->user_refs);
+}
+
+static void kcont_put_user(struct kcont *c)
+{
+    if (refcount_dec_and_test(&c->user_refs)) {
+        pr_info("kcontainer: container %llu has no more users\n", c->id);
+    }
 }
 
 static int kcont_destroy_locked(u64 id)
@@ -72,15 +86,21 @@ static int kcont_destroy_locked(u64 id)
     struct kcont *c = kcont_lookup(id);
     if (!c)
         return -ENOENT;
-    /* Only allow deletion if no external references exist */
-    if (!refcount_dec_and_test(&c->refs)) {
-        /* There are still logical references (e.g., fds in processes) */
-        refcount_inc(&c->refs); /* Restore the reference */
+    
+    if (refcount_read(&c->user_refs) > 0) {
+        pr_info("kcontainer: container %llu still has %d users\n", 
+                c->id, refcount_read(&c->user_refs));
         return -EBUSY;
     }
+    
+    if (!refcount_dec_and_test(&c->refs)) {
+        refcount_inc(&c->refs);
+        return -EBUSY;
+    }
+    
     hash_del(&c->node);
     fput(c->shmem_file);
-    kfree(c);
+    kfree_rcu(c, rcu);
     return 0;
 }
 
@@ -117,9 +137,11 @@ static long kcontainer_ioctl(struct file *file, unsigned int cmd, unsigned long 
             return -ENOENT;
         }
         refcount_inc(&c->refs);
+        kcont_get_user(c);
         fd = get_unused_fd_flags(O_RDWR);
         if (fd < 0) {
             refcount_dec(&c->refs);
+            kcont_put_user(c);
             mutex_unlock(&g_lock);
             return fd;
         }
@@ -142,17 +164,39 @@ static long kcontainer_ioctl(struct file *file, unsigned int cmd, unsigned long 
         struct kcont *c;
         if (copy_from_user(&info, (void __user *)arg, sizeof(info)))
             return -EFAULT;
+        
         mutex_lock(&g_lock);
         c = kcont_lookup(info.id);
         if (!c) {
             mutex_unlock(&g_lock);
             return -ENOENT;
         }
+        
+        // Заполняем структуру корректными значениями
         info.size = c->size;
-        info.refcnt = refcount_read(&c->refs);
+        info.user_refs = refcount_read(&c->user_refs);
+        info.kernel_refs = refcount_read(&c->refs);
         mutex_unlock(&g_lock);
+        
         if (copy_to_user((void __user *)arg, &info, sizeof(info)))
             return -EFAULT;
+        return 0;
+    }
+    case KC_IOCTL_FORCE_DESTROY: {
+        u64 id;
+        struct kcont *c;
+        if (copy_from_user(&id, (void __user *)arg, sizeof(id)))
+            return -EFAULT;
+        mutex_lock(&g_lock);
+        c = kcont_lookup(id);
+        if (!c) {
+            mutex_unlock(&g_lock);
+            return -ENOENT;
+        }
+        hash_del(&c->node);
+        fput(c->shmem_file);
+        kfree_rcu(c, rcu);
+        mutex_unlock(&g_lock);
         return 0;
     }
     default:

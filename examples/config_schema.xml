@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema>
+    <!-- Поддерживаемые примитивные типы -->
+    <primitive_types>
+        <type name="bool" size="1"/>
+        <type name="int8_t" size="1"/>
+        <type name="uint8_t" size="1"/>
+        <type name="int16_t" size="2"/>
+        <type name="uint16_t" size="2"/>
+        <type name="int32_t" size="4"/>
+        <type name="uint32_t" size="4"/>
+        <type name="int64_t" size="8"/>
+        <type name="uint64_t" size="8"/>
+        <type name="float" size="4"/>
+        <type name="double" size="8"/>
+        <type name="char" size="1"/> <!-- Для строк и массивов char -->
+    </primitive_types>
+
+    <!-- Правила валидации -->
+    <validation>
+        <rule name="container_id_unique">true</rule>
+        <rule name="variable_name_unique">true</rule>
+        <rule name="struct_name_unique">true</rule>
+    </validation>
+</schema>

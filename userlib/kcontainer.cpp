@@ -62,16 +62,21 @@ Container Container::open(uint64_t id)
     int ctl = dev_open();
     int64_t fd = ioctl(ctl, KC_IOCTL_GET_FD, &id);
     int e = errno;
-    ::close(ctl);
-    if (fd < 0) throw std::system_error(e, std::generic_category(), "KC_IOCTL_GET_FD");
-
-    size_t size = 0;
-    uint32_t refcnt = 0;
-    Container c(id, (int)fd, 0);
-    if (c.info(size, refcnt)) {
-        c.size_ = size;
+    if (fd < 0) {
+        ::close(ctl);
+        throw std::system_error(e, std::generic_category(), "KC_IOCTL_GET_FD");
     }
-    return c;
+
+    // Получаем информацию о контейнере для определения размера
+    kc_info info{};
+    info.id = id;
+    size_t size = 0;
+    if (ioctl(ctl, KC_IOCTL_INFO, &info) >= 0) {
+        size = info.size;
+    }
+    
+    ::close(ctl);
+    return Container(id, (int)fd, size);
 }
 
 Mapping Container::map()
@@ -96,17 +101,86 @@ void Container::close()
     }
 }
 
-bool Container::info(size_t& size_out, uint32_t& refcnt_out) const
+bool Container::info(size_t& size_out, uint32_t& user_refs_out, uint32_t& kernel_refs_out) const
 {
     if (fd_ < 0) return false;
 
+    int ctl = dev_open();  // Нужно использовать control device для запроса информации
     kc_info info{};
     info.id = id_;
-    if (ioctl(fd_, KC_IOCTL_INFO, &info) < 0) return false;
-
+    
+    if (ioctl(ctl, KC_IOCTL_INFO, &info) < 0) {
+        ::close(ctl);
+        return false;
+    }
+    
     size_out = info.size;
-    refcnt_out = info.refcnt;
+    user_refs_out = info.user_refs;
+    kernel_refs_out = info.kernel_refs;
+    
+    ::close(ctl);
     return true;
+}
+
+bool Container::force_destroy(uint64_t id)
+{
+    int ctl = dev_open();
+    if (ioctl(ctl, KC_IOCTL_FORCE_DESTROY, &id) < 0) {
+        int e = errno;
+        ::close(ctl);
+        return false;
+    }
+    ::close(ctl);
+    return true;
+}
+
+Container::ContainerStats Container::get_stats(uint64_t id)
+{
+    ContainerStats stats{};
+    stats.id = id;
+    
+    try {
+        int ctl = dev_open();
+        kc_info info{};
+        info.id = id;
+        
+        if (ioctl(ctl, KC_IOCTL_INFO, &info) >= 0) {
+            stats.size = info.size;
+            stats.user_refs = info.user_refs;
+            stats.kernel_refs = info.kernel_refs;
+            stats.exists = true;
+        }
+        ::close(ctl);
+    } catch (...) {
+        // Контейнер не существует
+        stats.exists = false;
+    }
+    
+    return stats;
+}
+
+bool Container::exists(uint64_t id)
+{
+    return get_stats(id).exists;
+}
+
+// RAII обертка
+ScopedContainer::ScopedContainer(uint64_t id, size_t size) {
+    if (size > 0) {
+        try {
+            container_ = Container::create(id, size);
+            created_ = true;
+        } catch (...) {
+            // Пытаемся открыть существующий
+            container_ = Container::open(id);
+        }
+    } else {
+        container_ = Container::open(id);
+    }
+}
+
+ScopedContainer::~ScopedContainer() {
+    container_.close();
 }
 
 } // namespace kcontainer
