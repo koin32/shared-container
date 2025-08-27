@@ -41,7 +41,6 @@ Container Container::create(uint64_t id, size_t size)
     req.id = id;
     req.size = size;
     req.flags = KC_FLAG_NONE;
-    req.mode = 0666;
 
     if (ioctl(ctl, KC_IOCTL_CREATE, &req) < 0) {
         int e = errno;
