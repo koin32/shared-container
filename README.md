@@ -1,5 +1,0 @@
-﻿# shared-container
-
-__In the process of development__
-
-Containerization of variables for use in separately running processes.

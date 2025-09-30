@@ -1,0 +1,19 @@
+container: varser_foo
+lock_policy: "per_variable_rw"
+variables:
+  - name: counter
+    type: int64
+    default: 0
+  - name: flag
+    type: uint8
+    default: 1
+  - name: temperature
+    type: double
+    default: 20.5
+  - name: note
+    type: string
+    size: 256
+    default: "hello"
+  - name: blob_data
+    type: blob
+    size: 256

@@ -1,7 +1,7 @@
-obj-m += kcontainer.o
+obj-m += varser.o
 
-KDIR := /lib/modules/$(shell uname -r)/build
-PWD  := $(shell pwd)
+KDIR ?= /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
 
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
